@@ -122,7 +122,7 @@ def animate_path(path, idx=0):
     x, y = path[idx]
     if (x, y) != end:
         canvas.itemconfig(tiles[x][y], fill=COLORS["path"])
-    root.after(25, animate_path, path, idx + 1)
+    root.after(speed_var.get(), animate_path, path, idx + 1)
 
 
 def run_search():
@@ -242,6 +242,7 @@ root.configure(bg=COLORS["bg"])
 root.resizable(False, False)
 
 diagonal_var = tk.BooleanVar(value=False)
+speed_var = tk.IntVar(value=25)  # ms per animation step
 
 
 def on_diagonal_toggle():
@@ -361,6 +362,40 @@ ttk.Checkbutton(
     variable=diagonal_var,
     command=on_diagonal_toggle,
 ).pack(side="right", padx=12)
+
+# Speed slider row
+speed_row = tk.Frame(root, bg=COLORS["bg"])
+speed_row.pack(fill="x", padx=PADDING, pady=(0, 8))
+
+tk.Label(
+    speed_row,
+    text="Animation speed",
+    bg=COLORS["bg"],
+    fg=COLORS["muted"],
+    font=("SF Pro Display", 10),
+).pack(side="left")
+
+tk.Label(speed_row, text="slow", bg=COLORS["bg"], fg=COLORS["muted"],
+         font=("SF Pro Display", 9)).pack(side="left", padx=(10, 4))
+
+style.configure(
+    "Speed.Horizontal.TScale",
+    background=COLORS["bg"],
+    troughcolor=COLORS["panel"],
+)
+# Inverted: left = slow (high ms delay), right = fast (low ms delay)
+ttk.Scale(
+    speed_row,
+    from_=120,
+    to=1,
+    orient="horizontal",
+    variable=speed_var,
+    style="Speed.Horizontal.TScale",
+    length=200,
+).pack(side="left")
+
+tk.Label(speed_row, text="fast", bg=COLORS["bg"], fg=COLORS["muted"],
+         font=("SF Pro Display", 9)).pack(side="left", padx=(4, 0))
 
 # Legend
 legend = tk.Frame(root, bg=COLORS["bg"])
