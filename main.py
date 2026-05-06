@@ -1,6 +1,7 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 import heapq
+import json
 import random
 from collections import deque
 
@@ -276,6 +277,64 @@ def random_maze():
     reset_selection()
 
 
+def save_maze():
+    path = filedialog.asksaveasfilename(
+        defaultextension=".json",
+        filetypes=[("Maze JSON", "*.json")],
+        title="Save maze",
+    )
+    if not path:
+        return
+    data = {
+        "size": GRID_SIZE,
+        "grid": grid,
+        "start": list(start) if start else None,
+        "end": list(end) if end else None,
+    }
+    try:
+        with open(path, "w") as f:
+            json.dump(data, f)
+    except OSError as exc:
+        messagebox.showerror("Save failed", str(exc))
+        return
+    set_status(f"Saved to {path.split('/')[-1]}", COLORS["accent"])
+
+
+def load_maze():
+    global grid, start, end, last_path
+    path = filedialog.askopenfilename(
+        filetypes=[("Maze JSON", "*.json")],
+        title="Load maze",
+    )
+    if not path:
+        return
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        messagebox.showerror("Load failed", str(exc))
+        return
+
+    if data.get("size") != GRID_SIZE or len(data.get("grid", [])) != GRID_SIZE:
+        messagebox.showerror(
+            "Load failed",
+            f"Maze size mismatch — expected {GRID_SIZE}x{GRID_SIZE}.",
+        )
+        return
+
+    grid = [list(row) for row in data["grid"]]
+    start = tuple(data["start"]) if data.get("start") else None
+    end = tuple(data["end"]) if data.get("end") else None
+    last_path = []
+    for x in range(GRID_SIZE):
+        for y in range(GRID_SIZE):
+            repaint_tile(x, y)
+    if start and end:
+        run_search()
+    else:
+        set_status("Maze loaded — pick start and end", COLORS["text"])
+
+
 def set_status(text, color=None):
     status_var.set(text)
     status_label.configure(foreground=color or COLORS["text"])
@@ -389,6 +448,8 @@ controls.pack(fill="x", padx=PADDING, pady=(4, 16))
 ttk.Button(controls, text="Clear Path", command=clear_path_visual).pack(side="left")
 ttk.Button(controls, text="Reset Selection", command=reset_selection).pack(side="left", padx=8)
 ttk.Button(controls, text="Random Maze", command=random_maze).pack(side="left")
+ttk.Button(controls, text="Save", command=save_maze).pack(side="left", padx=(8, 4))
+ttk.Button(controls, text="Load", command=load_maze).pack(side="left")
 ttk.Button(controls, text="Reset All", command=reset_all).pack(side="right")
 
 style.configure(
