@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import heapq
 import random
+from collections import deque
 
 GRID_SIZE = 15
 TILE_SIZE = 40
@@ -33,19 +34,68 @@ paint_mode = None  # "wall" or "empty" while right-button is held
 SQRT2 = 2 ** 0.5
 
 
-def astar(grid, start, end, diagonal=False):
-    def h(a, b):
-        dx, dy = abs(a[0] - b[0]), abs(a[1] - b[1])
-        if diagonal:
-            # Octile distance
-            return (dx + dy) + (SQRT2 - 2) * min(dx, dy)
-        return dx + dy
-
+def neighbor_moves(diagonal):
     moves = [(0, 1), (1, 0), (0, -1), (-1, 0)]
     if diagonal:
         moves += [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+    return moves
 
-    counter = 0  # tiebreaker for stable ordering
+
+def reconstruct(came_from, current):
+    path = []
+    while current in came_from:
+        path.append(current)
+        current = came_from[current]
+    path.reverse()
+    return path
+
+
+def can_step(grid, current, dx, dy):
+    nx, ny = current[0] + dx, current[1] + dy
+    if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
+        return False
+    if grid[nx][ny] == 1:
+        return False
+    # Block diagonals that cut a corner through walls
+    if dx and dy and (grid[current[0] + dx][current[1]] == 1
+                      or grid[current[0]][current[1] + dy] == 1):
+        return False
+    return True
+
+
+def search(grid, start, end, algorithm="A*", diagonal=False):
+    moves = neighbor_moves(diagonal)
+
+    if algorithm == "BFS":
+        queue = deque([start])
+        came_from = {}
+        explored = {start}
+        while queue:
+            current = queue.popleft()
+            if current == end:
+                return reconstruct(came_from, current), explored
+            for dx, dy in moves:
+                if not can_step(grid, current, dx, dy):
+                    continue
+                neighbor = (current[0] + dx, current[1] + dy)
+                if neighbor in explored:
+                    continue
+                explored.add(neighbor)
+                came_from[neighbor] = current
+                queue.append(neighbor)
+        return [], explored
+
+    # A* and Dijkstra share the priority-queue skeleton; only the
+    # heuristic differs (Dijkstra is A* with h = 0).
+    def h(a, b):
+        if algorithm == "Dijkstra":
+            return 0
+        dx, dy = abs(a[0] - b[0]), abs(a[1] - b[1])
+        if diagonal:
+            return (dx + dy) + (SQRT2 - 2) * min(dx, dy)
+        return dx + dy
+
+    counter = 0
     open_list = [(0, counter, start)]
     came_from = {}
     g_score = {start: 0}
@@ -56,28 +106,15 @@ def astar(grid, start, end, diagonal=False):
         if current in explored:
             continue
         explored.add(current)
-
         if current == end:
-            path = []
-            while current in came_from:
-                path.append(current)
-                current = came_from[current]
-            path.reverse()
-            return path, explored
+            return reconstruct(came_from, current), explored
 
         for dx, dy in moves:
-            nx, ny = current[0] + dx, current[1] + dy
-            if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
+            if not can_step(grid, current, dx, dy):
                 continue
-            if grid[nx][ny] == 1:
-                continue
-            # Block diagonal movement that cuts a corner
-            if dx and dy and (grid[current[0] + dx][current[1]] == 1
-                              or grid[current[0]][current[1] + dy] == 1):
-                continue
+            neighbor = (current[0] + dx, current[1] + dy)
             step = SQRT2 if dx and dy else 1
             tentative = g_score[current] + step
-            neighbor = (nx, ny)
             if tentative < g_score.get(neighbor, float("inf")):
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative
@@ -115,14 +152,18 @@ def clear_path_visual():
             canvas.itemconfig(tiles[x][y], fill=COLORS["empty"])
 
 
-def animate_path(path, idx=0):
+def animate_path(path, idx=0, explored_count=0):
     if idx >= len(path):
-        set_status(f"Path found — length {len(path)}", COLORS["path"])
+        set_status(
+            f"{algorithm_var.get()}: path length {len(path)}, "
+            f"explored {explored_count} cells",
+            COLORS["path"],
+        )
         return
     x, y = path[idx]
     if (x, y) != end:
         canvas.itemconfig(tiles[x][y], fill=COLORS["path"])
-    root.after(speed_var.get(), animate_path, path, idx + 1)
+    root.after(speed_var.get(), animate_path, path, idx + 1, explored_count)
 
 
 def run_search():
@@ -130,7 +171,11 @@ def run_search():
     if not start or not end:
         return
     clear_path_visual()
-    path, explored = astar(grid, start, end, diagonal=diagonal_var.get())
+    path, explored = search(
+        grid, start, end,
+        algorithm=algorithm_var.get(),
+        diagonal=diagonal_var.get(),
+    )
     # Briefly tint explored cells
     for x, y in explored:
         if (x, y) != start and (x, y) != end and grid[x][y] == 0:
@@ -140,7 +185,7 @@ def run_search():
         return
     last_path = path
     set_status("Tracing path…", COLORS["accent"])
-    root.after(120, animate_path, path)
+    root.after(120, animate_path, path, 0, len(explored))
 
 
 def on_left_click(event):
@@ -243,9 +288,11 @@ root.resizable(False, False)
 
 diagonal_var = tk.BooleanVar(value=False)
 speed_var = tk.IntVar(value=25)  # ms per animation step
+algorithm_var = tk.StringVar(value="A*")
+ALGORITHMS = ("A*", "Dijkstra", "BFS")
 
 
-def on_diagonal_toggle():
+def on_setting_change(*_):
     if start and end:
         run_search()
 
@@ -360,8 +407,36 @@ ttk.Checkbutton(
     controls,
     text="Diagonal moves",
     variable=diagonal_var,
-    command=on_diagonal_toggle,
+    command=on_setting_change,
 ).pack(side="right", padx=12)
+
+style.configure(
+    "TCombobox",
+    fieldbackground=COLORS["panel"],
+    background=COLORS["panel"],
+    foreground=COLORS["text"],
+    arrowcolor=COLORS["text"],
+    bordercolor=COLORS["panel"],
+    selectbackground=COLORS["panel"],
+    selectforeground=COLORS["text"],
+)
+algo_combo = ttk.Combobox(
+    controls,
+    textvariable=algorithm_var,
+    values=ALGORITHMS,
+    state="readonly",
+    width=10,
+)
+algo_combo.pack(side="right", padx=4)
+algo_combo.bind("<<ComboboxSelected>>", on_setting_change)
+
+tk.Label(
+    controls,
+    text="Algorithm:",
+    bg=COLORS["bg"],
+    fg=COLORS["muted"],
+    font=("SF Pro Display", 10),
+).pack(side="right")
 
 # Speed slider row
 speed_row = tk.Frame(root, bg=COLORS["bg"])
