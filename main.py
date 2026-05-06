@@ -30,17 +30,29 @@ last_path = []
 paint_mode = None  # "wall" or "empty" while right-button is held
 
 
-def astar(grid, start, end):
-    def h(a, b):
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+SQRT2 = 2 ** 0.5
 
-    open_list = [(0, start)]
+
+def astar(grid, start, end, diagonal=False):
+    def h(a, b):
+        dx, dy = abs(a[0] - b[0]), abs(a[1] - b[1])
+        if diagonal:
+            # Octile distance
+            return (dx + dy) + (SQRT2 - 2) * min(dx, dy)
+        return dx + dy
+
+    moves = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    if diagonal:
+        moves += [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+
+    counter = 0  # tiebreaker for stable ordering
+    open_list = [(0, counter, start)]
     came_from = {}
     g_score = {start: 0}
     explored = set()
 
     while open_list:
-        _, current = heapq.heappop(open_list)
+        _, _, current = heapq.heappop(open_list)
         if current in explored:
             continue
         explored.add(current)
@@ -53,18 +65,24 @@ def astar(grid, start, end):
             path.reverse()
             return path, explored
 
-        for dx, dy in ((0, 1), (1, 0), (0, -1), (-1, 0)):
+        for dx, dy in moves:
             nx, ny = current[0] + dx, current[1] + dy
             if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
                 continue
             if grid[nx][ny] == 1:
                 continue
-            tentative = g_score[current] + 1
+            # Block diagonal movement that cuts a corner
+            if dx and dy and (grid[current[0] + dx][current[1]] == 1
+                              or grid[current[0]][current[1] + dy] == 1):
+                continue
+            step = SQRT2 if dx and dy else 1
+            tentative = g_score[current] + step
             neighbor = (nx, ny)
             if tentative < g_score.get(neighbor, float("inf")):
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative
-                heapq.heappush(open_list, (tentative + h(neighbor, end), neighbor))
+                counter += 1
+                heapq.heappush(open_list, (tentative + h(neighbor, end), counter, neighbor))
 
     return [], explored
 
@@ -112,7 +130,7 @@ def run_search():
     if not start or not end:
         return
     clear_path_visual()
-    path, explored = astar(grid, start, end)
+    path, explored = astar(grid, start, end, diagonal=diagonal_var.get())
     # Briefly tint explored cells
     for x, y in explored:
         if (x, y) != start and (x, y) != end and grid[x][y] == 0:
@@ -223,6 +241,14 @@ root.title("Route Finder — A*")
 root.configure(bg=COLORS["bg"])
 root.resizable(False, False)
 
+diagonal_var = tk.BooleanVar(value=False)
+
+
+def on_diagonal_toggle():
+    if start and end:
+        run_search()
+
+
 style = ttk.Style()
 style.theme_use("clam")
 style.configure(
@@ -316,6 +342,25 @@ ttk.Button(controls, text="Clear Path", command=clear_path_visual).pack(side="le
 ttk.Button(controls, text="Reset Selection", command=reset_selection).pack(side="left", padx=8)
 ttk.Button(controls, text="Random Maze", command=random_maze).pack(side="left")
 ttk.Button(controls, text="Reset All", command=reset_all).pack(side="right")
+
+style.configure(
+    "TCheckbutton",
+    background=COLORS["bg"],
+    foreground=COLORS["text"],
+    focuscolor=COLORS["bg"],
+    font=("SF Pro Display", 11),
+)
+style.map(
+    "TCheckbutton",
+    background=[("active", COLORS["bg"])],
+    foreground=[("active", COLORS["accent"])],
+)
+ttk.Checkbutton(
+    controls,
+    text="Diagonal moves",
+    variable=diagonal_var,
+    command=on_diagonal_toggle,
+).pack(side="right", padx=12)
 
 # Legend
 legend = tk.Frame(root, bg=COLORS["bg"])
