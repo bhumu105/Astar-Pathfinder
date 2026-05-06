@@ -27,6 +27,7 @@ tiles = [[None] * GRID_SIZE for _ in range(GRID_SIZE)]
 start = None
 end = None
 last_path = []
+paint_mode = None  # "wall" or "empty" while right-button is held
 
 
 def astar(grid, start, end):
@@ -148,14 +149,38 @@ def on_left_click(event):
         set_status("Pick an end tile", COLORS["end"])
 
 
-def on_right_click(event):
+def apply_paint(x, y):
+    if (x, y) == start or (x, y) == end:
+        return
+    target = 1 if paint_mode == "wall" else 0
+    if grid[x][y] != target:
+        grid[x][y] = target
+        repaint_tile(x, y)
+
+
+def on_right_press(event):
+    global paint_mode
     x, y = event.x // TILE_SIZE, event.y // TILE_SIZE
     if not (0 <= x < GRID_SIZE and 0 <= y < GRID_SIZE):
         return
     if (x, y) == start or (x, y) == end:
         return
-    grid[x][y] = 0 if grid[x][y] == 1 else 1
-    repaint_tile(x, y)
+    paint_mode = "empty" if grid[x][y] == 1 else "wall"
+    apply_paint(x, y)
+
+
+def on_right_drag(event):
+    if paint_mode is None:
+        return
+    x, y = event.x // TILE_SIZE, event.y // TILE_SIZE
+    if not (0 <= x < GRID_SIZE and 0 <= y < GRID_SIZE):
+        return
+    apply_paint(x, y)
+
+
+def on_right_release(_event):
+    global paint_mode
+    paint_mode = None
 
 
 def reset_selection():
@@ -276,8 +301,12 @@ for x in range(GRID_SIZE):
         tiles[x][y] = rect
 
 canvas.bind("<Button-1>", on_left_click)
-canvas.bind("<Button-2>", on_right_click)
-canvas.bind("<Button-3>", on_right_click)
+canvas.bind("<Button-2>", on_right_press)
+canvas.bind("<Button-3>", on_right_press)
+canvas.bind("<B2-Motion>", on_right_drag)
+canvas.bind("<B3-Motion>", on_right_drag)
+canvas.bind("<ButtonRelease-2>", on_right_release)
+canvas.bind("<ButtonRelease-3>", on_right_release)
 
 # Controls
 controls = tk.Frame(root, bg=COLORS["bg"])
@@ -310,7 +339,7 @@ add_legend(legend, COLORS["pillar"], "Wall")
 
 tk.Label(
     legend,
-    text="Left-click: place • Right-click: toggle wall",
+    text="Left-click: place • Right-click + drag: paint walls",
     bg=COLORS["bg"],
     fg=COLORS["muted"],
     font=("SF Pro Display", 10),
